@@ -36,3 +36,4 @@ details.log{font:12px/1.5 ui-monospace,Menlo,monospace}details.log summary{curso
 .tl__bar--running{background:#3b6fb6}.tl__bar--landed{background:var(--ok)}.tl__bar--ignored{background:#d9a21b}.tl__bar--aborted{background:#9a9189}.tl__bar--failed{background:var(--bad)}
 .tl__axis,#axis{position:relative;height:16px;margin-left:240px}.tl__tick{position:absolute;font:11px ui-monospace,monospace;color:var(--muted);transform:translateX(-50%)}
 @media(max-width:800px){.tl__row{grid-template-columns:120px 1fr}#axis{margin-left:130px}}
+.hint{margin:0;padding:10px 14px;border-radius:10px;background:#fff4e1;border:1px solid #f1d49a;font:14px/1.5 system-ui,sans-serif}
