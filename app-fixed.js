@@ -10,12 +10,11 @@
 
    AbortController is added as a bonus: it drops the old connections so the
    Network panel shows them as (canceled). It is best-effort — a response that
-   already finished still resolves — so the counter check stays. ?noabort=1 turns it off. */
+   already finished still resolves — so the counter check stays. */
 
-const USE_ABORT = !location.search.includes('noabort');
 let listSel = 0, mealSel = 0;
 let listCtl = null, mealCtl = null;
-const abortable = () => { const c = USE_ABORT ? new AbortController() : null; return [c, c ? c.signal : undefined]; };
+const abortable = () => { const c = new AbortController(); return [c, c.signal]; };
 
 async function showList(sel) {
   const my = ++listSel; ++mealSel;                       // a new list also retires the old recipe
