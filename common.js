@@ -1,147 +1,83 @@
-/* Shared by BOTH versions: API helper, rendering, wiring. Nothing here
-   decides whether a response is stale — see app-broken.js / app-fixed.js. */
+/* Shared by both versions: picks, fetch, rendering, race strip. */
 const API = 'https://api-hub-50046202742.development.catalystappsail.in/api/mealdb';
 const $ = (s) => document.querySelector(s);
-const enc = encodeURIComponent;
 const t0 = performance.now();
 const ms = () => Math.round(performance.now() - t0);
 
-/* Every request is recorded here so the race view can draw it. */
+/* What the user can pick. Chicken is a SEARCH (level 1, 2000 ms) — the slow one.
+   The rest are CATEGORIES (level 2, 1000 ms) — fast. Unicorn does not exist → 404. */
+const PICKS = [
+  { label: 'Chicken', path: '/search/chicken',    note: 'search, 2 s, slow' },
+  { label: 'Goat',    path: '/category/Goat',     note: 'category, 1 s, fast' },
+  { label: 'Seafood', path: '/category/Seafood',  note: 'category, 1 s' },
+  { label: 'Dessert', path: '/category/Dessert',  note: 'category, 1 s' },
+  { label: 'Unicorn', path: '/category/Unicorn',  note: 'not on the menu, 404' },
+];
+
+/* ---- fetch: every call is recorded so the race strip can draw it ---- */
 const reqs = [];
-let roundStart = 0;
-async function getJson(path, { signal, sel } = {}) {
-  const now = ms();
-  const lastEnd = reqs.length ? Math.max(...reqs.map((r) => r.end ?? Infinity)) : -Infinity;
-  if (!reqs.some((r) => !r.end) && now - lastEnd > 4000) { reqs.length = 0; roundStart = now; } // a new round
-  const row = { sel, path: decodeURIComponent(path), start: now, end: null, state: 'running' };
+async function getJson(path, sel, signal) {
+  const row = { sel, path: decodeURIComponent(path), start: ms(), end: null, state: 'running' };
   reqs.push(row);
   try {
     const res = await fetch(API + path, { signal });
-    if (!res.ok) {
-      let msg = `HTTP ${res.status}`;
-      try { msg = (await res.json()).error.message || msg; } catch (_) {}
-      throw new Error(msg);
-    }
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = (await res.json()).error.message || m; } catch (_) {} throw new Error(m); }
     const data = await res.json();
-    row.end = ms(); row.state = 'landed'; drawRace();
-    return data;
+    row.end = ms(); row.state = 'landed'; return data;
   } catch (err) {
-    row.end = ms(); row.state = err.name === 'AbortError' ? 'aborted' : 'failed'; drawRace();
-    throw err;
+    row.end = ms(); row.state = err.name === 'AbortError' ? 'aborted' : 'failed'; throw err;
   }
 }
+const markIgnored = (sel, path) => { const r = reqs.find((x) => x.sel === sel && x.path === decodeURIComponent(path)); if (r) r.state = 'ignored'; };
 
-/* ---------- race view: timeline bars + verdict ---------- */
-const isList = (r) => r.path.startsWith('/search/') || r.path.startsWith('/category/');
-const isMeal = (r) => r.path.startsWith('/meal/');
-function verdictFor(kind, filter) {
-  const rows = reqs.filter(filter);
-  if (!rows.length) return null;
-  const wanted = rows[rows.length - 1];                               // last one the user asked for
-  const landed = rows.filter((r) => r.state === 'landed').sort((a, b) => a.end - b.end);
-  const shown = landed[landed.length - 1];                             // last one that painted
-  const open = rows.some((r) => r.state === 'running');
-  if (!shown) return { ok: null, text: `${kind}: waiting for ${wanted.sel} ${wanted.path}…` };
-  if (shown.sel === wanted.sel) return { ok: true, text: `${kind}: showing ${shown.sel} ${shown.path} — the last one you picked${open ? ' (older requests still open)' : ''}` };
-  return { ok: false, text: `${kind}: you picked ${wanted.sel} ${wanted.path} last — the page is showing ${shown.sel} ${shown.path}` };
+/* ---- rendering ---- */
+let lastPick = null, shownBy = {}, names = {}, failedSel = null; // which selection painted each panel
+function clearCard(pick, sel) {
+  lastPick = { pick, sel }; shownBy = {}; names[sel] = pick.label; failedSel = null;
+  $('#title').textContent = pick.label; $('#photo').removeAttribute('src');
+  for (const p of ['meal', 'area', 'ingredient']) { $(`#${p} .body`).textContent = ''; $(`#${p} .who`).textContent = 'loading…'; }
 }
+function paint(panel, sel, html) {
+  shownBy[panel] = sel;
+  $(`#${panel} .body`).innerHTML = html;
+  $(`#${panel} .who`).textContent = `from order ${sel} (${names[sel]}), ${(ms() / 1000).toFixed(1)}s`;
+}
+function fail(panel, sel, err) {
+  shownBy[panel] = sel; if (panel === 'meal') failedSel = sel;
+  $(`#${panel} .body`).innerHTML = `<span class="err">${err.message}</span>`;
+  $(`#${panel} .who`).textContent = 'failed';
+  if (panel === 'meal') for (const p of ['area', 'ingredient']) $(`#${p} .who`).textContent = 'skipped, needs the meal';
+}
+const mealHtml = (m) => { $('#photo').src = API + m.thumb.replace('/api/mealdb', ''); return `<b>${m.name}</b><br>${m.ingredients.slice(0, 5).map((i) => i.name).join(', ')}…`; };
+const areaHtml = (a) => `<b>${a.area}</b> cuisine · ${a.count} recipes · ${a.meals.slice(0, 3).map((x) => x.name).join(', ')}…`;
+const ingHtml  = (i) => `<b>${i.name}</b> · ${i.description ? i.description.slice(0, 140) + '…' : 'no description'}`;
+
+/* ---- race strip ---- */
 function drawRace() {
-  const track = $('#track'); if (!track) return;
-  const now = ms();
-  const span = Math.max(6000, (reqs.some((r) => !r.end) ? now : Math.max(...reqs.map((r) => r.end))) - roundStart + 300);
-  const pct = (t) => `${Math.max(0, Math.min(100, ((t - roundStart) / span) * 100))}%`;
-  track.innerHTML = reqs.map((r) => {
-    const end = r.end ?? now;
-    return `<div class="tl__row"><span class="tl__label"><b>${r.sel ?? 'load'}</b> ${r.path}</span><span class="tl__lane">` +
-      `<span class="tl__bar tl__bar--${r.state}" style="left:${pct(r.start)};width:${pct(end).slice(0, -1) - pct(r.start).slice(0, -1)}%">${((end - r.start) / 1000).toFixed(1)}s ${r.state}</span></span></div>`;
-  }).join('');
-  const ticks = []; for (let t = 0; t <= span; t += 1000) ticks.push(`<span class="tl__tick" style="left:${pct(roundStart + t)}">${t / 1000}s</span>`);
-  $('#axis').innerHTML = ticks.join('');
-  const v = [verdictFor('Meal list', isList), verdictFor('Recipe', isMeal)].filter(Boolean);
-  const el = $('#verdict');
-  el.innerHTML = v.map((x) => `<span class="${x.ok === null ? 'wait' : x.ok ? 'good' : 'bad'}">${x.text}</span>`).join('');
-  el.hidden = !v.length;
+  if (!reqs.length) return;
+  const now = ms(), start = reqs[0].start;
+  const span = Math.max(5000, (reqs.some((r) => !r.end) ? now : Math.max(...reqs.map((r) => r.end))) - start + 200);
+  const pct = (t) => ((t - start) / span) * 100;
+  $('#track').innerHTML = reqs.map((r) => { const end = r.end ?? now;
+    return `<div class="row"><span class="lbl"><em>${r.sel}</em> ${r.path}</span><span class="lane"><span class="bar ${r.state}" style="left:${pct(r.start)}%;width:${pct(end) - pct(r.start)}%">${((end - r.start) / 1000).toFixed(1)}s ${r.state}</span></span></div>`; }).join('');
+  const v = $('#verdict');
+  if (!lastPick || shownBy.meal === undefined) { v.hidden = true; return; }
+  const sels = [...new Set(Object.values(shownBy))];
+  const ok = sels.length === 1 && sels[0] === lastPick.sel;
+  v.hidden = false; v.className = ok ? 'good' : 'bad';
+  const got = sels.map((x) => names[x]);
+  if (failedSel === lastPick.sel) { v.className = 'bad'; v.textContent = `You asked for ${lastPick.pick.label}. The kitchen could not make it.`; return; }
+  v.textContent = ok ? `You asked for ${lastPick.pick.label}. You got ${lastPick.pick.label}.`
+    : got.length === 1 ? `You asked for ${lastPick.pick.label}. You got ${got[0]}.`
+    : `You asked for ${lastPick.pick.label}. You got a mix of ${got.join(' and ')}.`;
 }
-(function tick() { if (reqs.some((r) => !r.end)) drawRace(); requestAnimationFrame(tick); })();
+(function tick() { drawRace(); requestAnimationFrame(tick); })();
 
-/* ---------- on-page log (so the demo can be followed without DevTools) ---------- */
-function log(sel, text, kind = '') {
-  if (kind === 'stale') { const r = [...reqs].reverse().find((x) => x.sel === sel && text.includes(x.path)); if (r) { r.state = 'ignored'; drawRace(); } }
-  const li = document.createElement('li'); li.className = kind;
-  li.innerHTML = `<span class="t">${String(ms()).padStart(5)} ms</span><span class="sel">${sel}</span>${text}`;
-  $('#log').prepend(li);
+/* ---- buttons ---- */
+function buildButtons(onPick) {
+  $('#picks').innerHTML = PICKS.map((p, i) => `<button data-i="${i}"><b>${p.label}</b><small>${p.note}</small></button>`).join('');
+  let n = 0; $('#picks').addEventListener('click', (e) => { if (e.target.closest('button')) { n++; $('#order').textContent = `order ${n}`; } });
+  $('#picks').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return;
+    $('#picks').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b)); onPick(PICKS[b.dataset.i]); });
+  $('#reset').addEventListener('click', () => { reqs.length = 0; lastPick = null; shownBy = {}; $('#track').innerHTML = ''; $('#verdict').hidden = true; });
 }
-
-/* ---------- list side ---------- */
-function setListLoading(title, sub) {
-  $('#listTitle').textContent = title; $('#listSub').textContent = sub; $('#meals').innerHTML = '';
-}
-function renderList(data, onPick) {
-  $('#listSub').textContent = `${data.count} meals`;
-  $('#meals').innerHTML = data.meals.map((m) =>
-    `<li><button data-id="${m.id}"><img src="${API}${m.thumb.replace('/api/mealdb', '')}" alt=""><span>${m.name}<small>${m.country ?? m.area ?? ''}</small></span></button></li>`).join('');
-  $('#meals').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-    $('#meals').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
-    onPick(b.dataset.id, b.textContent);
-  }));
-}
-function renderListError(err) {
-  $('#listSub').textContent = 'failed';
-  $('#meals').innerHTML = `<li class="err">${err.message}</li>`;
-}
-
-/* ---------- recipe side ---------- */
-const PANELS = ['meal', 'area', 'ingredient', 'shared'];
-const DEPENDANTS = { meal: ['area', 'ingredient', 'shared'], area: [], ingredient: ['shared'], shared: [] };
-function setStatus(p, text, kind) { const el = $(`#${p} .status`); el.textContent = text; el.className = `status ${kind}`; }
-function clearRecipe(title) {
-  $('#recipeTitle').textContent = title; $('#hero').removeAttribute('src');
-  for (const p of PANELS) { $(`#${p} .body`).innerHTML = ''; setStatus(p, 'loading…', 'loading'); }
-}
-function renderMeal(m) {
-  $('#recipeTitle').textContent = m.name;
-  $('#hero').src = API + m.image.replace('/api/mealdb', ''); $('#hero').alt = m.name;
-  $('#meal .body').innerHTML =
-    `<p class="muted">${m.category ?? ''} · ${m.area ?? 'no area'} · ${m.tags.join(', ') || 'no tags'}</p>` +
-    `<ul class="ings">${m.ingredients.map((i) => `<li>${i.measure ?? ''} ${i.name}</li>`).join('')}</ul>` +
-    `<p>${m.instructions.slice(0, 2).join(' ')}</p>`;
-  setStatus('meal', 'done', 'done');
-}
-function renderArea(a) {
-  $('#area .body').innerHTML = `<p><b>${a.area}</b> cuisine has ${a.count} recipes here: ${a.meals.slice(0, 6).map((x) => x.name).join(', ')}${a.count > 6 ? '…' : ''}</p>`;
-  setStatus('area', 'done', 'done');
-}
-function renderIngredient(i) {
-  $('#ingredient .body').innerHTML = `<p><b>${i.name}</b>${i.type ? ` · ${i.type}` : ''}</p><p>${i.description ? i.description.slice(0, 260) + '…' : '<span class="muted">no description in the dataset</span>'}</p>`;
-  setStatus('ingredient', 'done', 'done');
-}
-function renderShared(s) {
-  $('#shared .body').innerHTML = `<p>${s.count} recipes use <b>${s.ingredient}</b>: ${s.meals.slice(0, 8).map((x) => x.name).join(', ')}${s.count > 8 ? '…' : ''}</p>`;
-  setStatus('shared', 'done', 'done');
-}
-function renderError(p, err) {
-  $(`#${p} .body`).innerHTML = `<p class="err">${err.message}</p>`; setStatus(p, 'failed', 'error');
-  for (const d of DEPENDANTS[p]) setStatus(d, `skipped · needs ${p}`, 'error');
-}
-
-/* ---------- wiring: search box, category chips (level 1 on load) ---------- */
-function wire(onList) {
-  $('#searchForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const q = $('#q').value.trim(); if (!q) return;
-    $('#chips').querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
-    onList({ kind: 'search', key: q });
-  });
-  log('load', '→ GET /categories (level 1, 2000 ms) builds the chips', 'start');
-  getJson('/categories', { sel: 'load' }).then((d) => {
-    log('load', `✓ /categories (${d.count})`, 'done');
-    $('#chips').innerHTML = d.categories.map((c) => `<button class="chip" type="button" data-name="${c.name}">${c.name}</button>`).join('');
-    $('#chips').querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => {
-      $('#chips').querySelectorAll('.chip').forEach((x) => x.classList.toggle('active', x === c));
-      $('#q').value = '';
-      onList({ kind: 'category', key: c.dataset.name });
-    }));
-  }).catch((err) => { log('load', `✗ /categories failed: ${err.message}`, 'error'); $('#chips').innerHTML = `<span class="err">categories failed: ${err.message}</span>`; });
-}
-const listPath = (sel) => sel.kind === 'search' ? `/search/${enc(sel.key)}` : `/category/${enc(sel.key)}`;
-const listTitle = (sel) => sel.kind === 'search' ? `Search “${sel.key}”` : sel.key;
