@@ -39,5 +39,5 @@ button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
 .bar.landed{background:var(--green);color:var(--black);box-shadow:0 0 8px rgba(43,255,43,.5)}
 .bar.ignored,.bar.cancelled{background:none;border:1px dashed var(--white-60);color:var(--white-60);line-height:20px}
 .bar.failed{background:none;border:2px solid var(--yellow);color:var(--yellow);line-height:18px}
-@media(max-width:640px){header,main{padding-left:16px;padding-right:16px}.card{grid-template-columns:1fr}.row{grid-template-columns:110px 1fr}#verdict{font-size:22px}}
+@media(max-width:640px){header,main{padding-left:16px;padding-right:16px}.card{grid-template-columns:1fr}#photo[hidden]{display:none}.row{grid-template-columns:110px 1fr}#verdict{font-size:22px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
