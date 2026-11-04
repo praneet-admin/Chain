@@ -56,7 +56,8 @@ async function order(pick) {
   // 3. cuisine + ingredient — both need only the meal, so they start together
   const areaPath = `/area/${encodeURIComponent(meal.area)}`;
   const ingPath = `/ingredient/${encodeURIComponent(meal.ingredients[0].name)}`;
-  get(areaPath, sel, signal)
+  if (!meal.area) paint('area', sel, 'No cuisine listed for this meal, so nothing to request.');
+  else get(areaPath, sel, signal)
     .then((a) => isStale(sel) ? ignore(sel, areaPath) : paint('area', sel, areaHtml(a)))
     .catch((err) => { if (!isStale(sel)) fail('area', sel, err); });
   get(ingPath, sel, signal)
