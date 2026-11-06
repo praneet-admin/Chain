@@ -3,7 +3,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--black);color:var(--white);font:16px/1.5 "IBM Plex Sans",system-ui,sans-serif}
 header{max-width:860px;margin:0 auto;padding:20px 24px 0;display:flex;align-items:center;justify-content:space-between;gap:16px}
-h1{margin:0;font-size:20px;font-weight:600}h1::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:var(--glow);margin-right:10px;vertical-align:1px}
+h1{margin:0;font-size:20px;font-weight:600}h1::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:var(--glow);margin-right:10px;vertical-align:1px;transition:background .2s}
+body[data-busy="1"] h1::before{background:var(--yellow);box-shadow:0 0 10px rgba(255,196,0,.6)}
 h2{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--green);display:flex;align-items:center;gap:10px}
 main{max-width:860px;margin:0 auto;padding:16px 24px 56px;display:grid;gap:24px}
 .hint{margin:0;max-width:62ch}
