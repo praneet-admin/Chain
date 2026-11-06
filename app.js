@@ -105,7 +105,6 @@ const ingHtml  = (i) => `<b>${i.name}</b> — ${i.description ? i.description.sl
 
 /* ---- board: bars + verdict ---- */
 function draw() {
-  document.body.dataset.busy = reqs.some((r) => !r.end) ? '1' : '';
   if (!reqs.length) { $('#track').innerHTML = ''; $('#verdict').hidden = true; return; }
   const now = ms(), start = reqs[0].start;
   const span = Math.max(5000, (reqs.some((r) => !r.end) ? now : Math.max(...reqs.map((r) => r.end))) - start + 200);
@@ -122,7 +121,7 @@ function draw() {
   v.textContent = ok ? `You asked for ${want}. You got ${want}.`
     : got.length === 1 ? `You asked for ${want}. You got ${got[0]}.` : `You asked for ${want}. You got a mix of ${got.join(' and ')}.`;
 }
-(function tick() { if (reqs.some((r) => !r.end) || document.body.dataset.busy) draw(); requestAnimationFrame(tick); })();
+(function tick() { if (reqs.some((r) => !r.end)) draw(); requestAnimationFrame(tick); })();
 
 /* ---- controls ---- */
 function setMode(m) {
