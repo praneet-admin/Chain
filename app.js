@@ -13,7 +13,7 @@ const PICKS = [
   { label: 'Goat',    path: '/category/Goat',    note: 'category · 1 s · fast' },
   { label: 'Seafood', path: '/category/Seafood', note: 'category · 1 s' },
   { label: 'Dessert', path: '/category/Dessert', note: 'category · 1 s' },
-  { label: 'Unicorn', path: '/category/Unicorn', note: 'not on the menu · 404' },
+  { label: 'Pasta',   path: '/category/Pasta',   note: 'category · 1 s' },
 ];
 const HINT = {
   broken: 'Order Chicken (slow), then Goat (fast) straight away. Goat lands first, then the older Chicken answer paints over it.',
