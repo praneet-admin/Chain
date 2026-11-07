@@ -8,16 +8,23 @@ const $ = (s) => document.querySelector(s);
 const t0 = performance.now();
 const ms = () => Math.round(performance.now() - t0);
 
+/* Five ways into the menu, each a different real path through the API, slowest first.
+   The entry's job is the same every time: come back with a list of meals. */
 const PICKS = [
-  { label: 'Chicken', path: '/search/chicken',   note: 'search · 2 s · slow' },
-  { label: 'Goat',    path: '/category/Goat',    note: 'category · 1 s · fast' },
-  { label: 'Seafood', path: '/category/Seafood', note: 'category · 1 s' },
-  { label: 'Dessert', path: '/category/Dessert', note: 'category · 1 s' },
-  { label: 'Pasta',   path: '/category/Pasta',   note: 'category · 1 s' },
+  { label: 'Dessert', note: 'menu, then category · 3 s',
+    entry: async (sel, sig) => { await get('/categories', sel, sig); return get('/category/Dessert', sel, sig); } },
+  { label: 'Seafood', note: 'cuisines, then Portuguese · 2.3 s', match: /fish|prawn|shrimp|salmon/i,
+    entry: async (sel, sig) => { await get('/areas', sel, sig); return get('/area/Portuguese', sel, sig); } },
+  { label: 'Chicken', note: 'search by name · 2 s',
+    entry: (sel, sig) => get('/search/chicken', sel, sig) },
+  { label: 'Pasta',   note: 'category · 1 s',
+    entry: (sel, sig) => get('/category/Pasta', sel, sig) },
+  { label: 'Goat',    note: 'ingredient, then its meals · 0.5 s',
+    entry: async (sel, sig) => { const i = await get('/ingredient/goat%20meat', sel, sig); return get(`/by-ingredient/${encodeURIComponent(i.ingredient.name)}`, sel, sig); } },
 ];
 const HINT = {
-  broken: 'Order Chicken (slow), then Goat (fast) straight away. Goat lands first, then the older Chicken answer paints over it.',
-  fixed:  'Same test: Chicken, then Goat straight away. The Chicken answer is cancelled or ignored and the card stays Goat.',
+  broken: 'Click any two orders left to right, straight away. The left one is slower, so it lands after the right one and paints over its card.',
+  fixed:  'Same test, left to right. The slower answer is cancelled or ignored and the card keeps the order you clicked last.',
 };
 
 let mode = 'broken';
@@ -42,16 +49,17 @@ async function order(pick) {
 
   // 1. the order — nothing else can start before it: the meal id is inside it
   let list;
-  try { list = await get(pick.path, sel, signal); }
+  try { list = await pick.entry(sel, signal); }
   catch (err) { if (!isStale(sel)) fail('meal', sel, err); return; }
-  if (isStale(sel)) { ignore(sel, pick.path); return; }
+  if (isStale(sel)) { ignore(sel); return; }
 
   // 2. the meal — needs the id from step 1
-  const mealPath = `/meal/${list.meals[0].id}`;
+  const chosen = (pick.match && list.meals.find((m) => pick.match.test(m.name))) || list.meals[0];
+  const mealPath = `/meal/${chosen.id}`;
   let meal;
   try { meal = (await get(mealPath, sel, signal)).meal; }
   catch (err) { if (!isStale(sel)) fail('meal', sel, err); return; }
-  if (isStale(sel)) { ignore(sel, mealPath); return; }
+  if (isStale(sel)) { ignore(sel); return; }
   paint('meal', sel, mealHtml(meal));
 
   // 3. cuisine + ingredient — both need only the meal, so they start together
@@ -59,10 +67,10 @@ async function order(pick) {
   const ingPath = `/ingredient/${encodeURIComponent(meal.ingredients[0].name)}`;
   if (!meal.area) paint('area', sel, 'No cuisine listed for this meal, so nothing to request.');
   else get(areaPath, sel, signal)
-    .then((a) => isStale(sel) ? ignore(sel, areaPath) : paint('area', sel, areaHtml(a)))
+    .then((a) => isStale(sel) ? ignore(sel) : paint('area', sel, areaHtml(a)))
     .catch((err) => { if (!isStale(sel)) fail('area', sel, err); });
   get(ingPath, sel, signal)
-    .then((i) => isStale(sel) ? ignore(sel, ingPath) : paint('ingredient', sel, ingHtml(i.ingredient)))
+    .then((i) => isStale(sel) ? ignore(sel) : paint('ingredient', sel, ingHtml(i.ingredient)))
     .catch((err) => { if (!isStale(sel)) fail('ingredient', sel, err); });
 }
 
@@ -79,7 +87,7 @@ async function get(path, sel, signal) {
     row.end = ms(); row.state = err.name === 'AbortError' ? 'cancelled' : 'failed'; throw err;
   }
 }
-function ignore(sel, path) { const r = reqs.find((x) => x.sel === sel && x.path === decodeURIComponent(path)); if (r) r.state = 'ignored'; }
+function ignore(sel) { const r = [...reqs].reverse().find((x) => x.sel === sel && x.state === 'landed'); if (r) r.state = 'ignored'; }
 
 /* ---- card ---- */
 function clearCard(pick, sel) {
