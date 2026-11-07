@@ -34,6 +34,7 @@ const isStale = (sel) => mode === 'fixed' && sel !== latest;
 /* ======================================================================= */
 
 async function order(pick) {
+  if (!reqs.some((r) => !r.end)) { reqs.length = 0; orderNo = 0; }   // kitchen idle → new round on the board
   const sel = ++latest;
   if (mode === 'fixed') { if (controller) controller.abort(); controller = new AbortController(); }
   const signal = mode === 'fixed' ? controller.signal : undefined;
