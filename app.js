@@ -9,15 +9,16 @@ const t0 = performance.now();
 const ms = () => Math.round(performance.now() - t0);
 
 const PICKS = [
-  { label: 'Chicken', path: '/search/chicken',   note: 'search · 2 s · slow' },
-  { label: 'Goat',    path: '/category/Goat',    note: 'category · 1 s · fast' },
+  { label: 'Chicken', path: '/search/chicken',   note: 'search · 2 s', slow: true },
+  { label: 'Beef',    path: '/search/beef',      note: 'search · 2 s', slow: true },
+  { label: 'Lamb',    path: '/search/lamb',      note: 'search · 2 s', slow: true },
+  { label: 'Goat',    path: '/category/Goat',    note: 'category · 1 s' },
   { label: 'Seafood', path: '/category/Seafood', note: 'category · 1 s' },
   { label: 'Dessert', path: '/category/Dessert', note: 'category · 1 s' },
-  { label: 'Pasta',   path: '/category/Pasta',   note: 'category · 1 s' },
 ];
 const HINT = {
-  broken: 'Order Chicken (slow), then Goat (fast) straight away. Goat lands first, then the older Chicken answer paints over it.',
-  fixed:  'Same test: Chicken, then Goat straight away. The Chicken answer is cancelled or ignored and the card stays Goat.',
+  broken: 'Order any slow one, then any fast one straight away. The fast one lands first, then the older slow answer paints over it. Two fast ones in a row will not break: the newer one always lands last.',
+  fixed:  'Same test: a slow one, then a fast one straight away. The slow answer is cancelled or ignored and the card keeps the fast one.',
 };
 
 let mode = 'broken';
@@ -138,7 +139,10 @@ function reset() {
   document.querySelectorAll('#picks button').forEach((b) => b.classList.remove('active'));
   draw();
 }
-$('#picks').innerHTML = PICKS.map((p, i) => `<button type="button" data-i="${i}"><b>${p.label}</b><small>${p.note}</small></button>`).join('');
+const tile = (p, i) => `<button type="button" data-i="${i}"><b>${p.label}</b><small>${p.note}</small></button>`;
+$('#picks').innerHTML =
+  `<div class="group slow"><h3>Slow orders <span>search, answers in 2 s</span></h3><div class="tiles">${PICKS.map((p, i) => p.slow ? tile(p, i) : '').join('')}</div></div>` +
+  `<div class="group fast"><h3>Fast orders <span>category, answers in 1 s</span></h3><div class="tiles">${PICKS.map((p, i) => p.slow ? '' : tile(p, i)).join('')}</div></div>`;
 $('#picks').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return;
   document.querySelectorAll('#picks button').forEach((x) => x.classList.toggle('active', x === b)); order(PICKS[b.dataset.i]); draw(); });
 document.querySelectorAll('.switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
